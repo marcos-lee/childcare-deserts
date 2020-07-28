@@ -1,9 +1,5 @@
 module MatchingModel
 
-function μ_f(qual, center, α)
-    util = α[1] + α[2] * qual + α[3] * center
-end
-
 function matching_function(A, γ, NS_f, NS_v)
     X = A * (NS_f^γ) * (NS_v^(1-γ))
     return min(X, NS_f, NS_v)
@@ -13,8 +9,12 @@ function p_match(A, γ, NS_f, NS_v)
     P = matching_function(A, γ, NS_f, NS_v) / (NS_f)
 end
 
-function lnEU_f(α, qual, center, p_match)
-    lnEU_f = μ_f(α, qual, center) + ln(p_match)
+function μ_f(subsidy, qual, home, dist, α, β_f)
+    util = α[1] + α[2] * subsidy + α[3] * qual + α[4] * home + (dist ^ β_f) / 2500
+end
+
+function lnEU_f(subsidy, qual, home, dist, p_match, α, β_f)
+    lnEU_f = μ_f(subsidy, qual, home, dist, α, β_f) + log(p_match)
 end
 
 function cost(dist, β)
@@ -26,8 +26,14 @@ function lnEU_v(subsidy, dist, p_match, β, R)
 end
 
 function ϕ_v(subsidy_subset, dist_subset, p_match_subset, β, R)
-    ϕ_v = exp.(lnEU_v.(subsidy_subset, dist_subset, Ref(p_match), Ref(β), Ref(R)))./sum(exp.(lnEU_v.(subsidy_subset, dist_subset, Ref(p_match), Ref(β), Ref(R))))
+    temp = lnEU_v.(subsidy_subset, dist_subset, Ref(p_match), Ref(β), R)
+    ϕ_v = exp.(temp) ./ sum(exp.(temp))
 end
 
+function ϕ_f(subsidy_subset, qual_subset, home_subset, dist_subset, p_match, α, β_f)
+    temp = lnEU_f.(subsidy_subset, qual_subset, home_subset, dist_subset, Ref(p_match), Ref(α), β_f)
+    ϕ_f = exp.(temp) ./ sum(exp.(temp))
+    return ϕ_f
+end
 
 end

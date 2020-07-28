@@ -71,7 +71,7 @@ function lnEU_f(subsidy, qual, home, far, p_match, α)
 end
 
 
-
+a = family_pov[family_pov.zipcode .== 1,:]
 
 
 

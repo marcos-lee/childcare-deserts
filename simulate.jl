@@ -7,7 +7,7 @@ provider has 2 qualities high low, 2 modes home and center, 4 types q = 1,2,3,4
 include("MatchingModel.jl")
 using .MatchingModel
 
-const m = MatchingModel
+#const m = MatchingModel
 
 using Distributions, DataFrames, BenchmarkTools, Revise
 #using Revise
@@ -20,16 +20,41 @@ N = 5000
 #far = dist_vacancy .> 19.5
 
 #dists = rand(truncated(LogNormal(2.75, 0.5), 4, 50), N_g, N_p)
-subsidy = rand(Uniform(0,1), N_p) .< .8
+subsidy = rand(Uniform(0,1), N) .< .8
 #qual = 1 .+ (rand(Uniform(0,1), N_p) .< 0.2)
-home = rand(Uniform(0,1), N_p) .< 0.4
+home = rand(Uniform(0,1), N) .< 0.4
 type = 1 .+ subsidy .+ 2 .* (home)
 ntypes = maximum(type)
 
 female = rand(N) .> .5
 
-df = unique([0 0; 1 0; 0 1; 1 1])
+df = [0 0; 1 0; 0 1; 1 1]
 
+home_f = [0 1 0 1; 0 1 0 1; 0 1 0 1; 0 1 0 1]
+subsidy_f = [0 0 1 1; 0 0 1 1; 0 0 1 1; 0 0 1 1]
+
+family_pov = [home_f subsidy_f]
+
+home_v = [0 1 0 1; 0 1 0 1; 0 1 0 1; 0 1 0 1]
+subsidy_v = [0 0 1 1; 0 0 1 1; 0 0 1 1; 0 0 1 1]
+
+vacancy_pov = [home_v subsidy_v]
+αf = [2, 3.25, -1.3]
+αv = [-2.25, -2, 4.25]
+A = 0.4
+param = vcat(αf, αv, A)
+
+include("MatchingModel.jl")
+using .MatchingModel
+MatchingModel.get_equilibrium(vacancy_pov, family_pov, param, ntypes)
+
+get_equoi
+MatchingModel.lnEU.(home_f[1,:], subsidy_f[1,:], Ref(1), Ref(αf))
+# Side F, Side V
+# For F in matrix form, every variable of the type V needs a matrix of dimensions N1 x N2,
+# where N1 is how many unique types F has, and N2 is how many types V has
+
+# In long form for F, create a DataFrame that has V columns and N1xN2 rows
 
 #family_pov_temp = Array{Array{Float64}}(undef, N_g)
 #for i = 1:N_g
@@ -72,10 +97,9 @@ df = unique([0 0; 1 0; 0 1; 1 1])
 A = 0.4
 β_v = 1
 R = 5
-γ = 0.5
 N_v = 50
 N_f = 1000
-param = vcat(α, β_v, β_f, R, A, γ)
+param = vcat(α, β_v, β_f, R, A)
 
 include("MatchingModel.jl")
 using .MatchingModel

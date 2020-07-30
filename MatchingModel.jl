@@ -60,28 +60,30 @@ function unpack(param)
 end
 
 
-function gen_shares(vacancy_pov, family_pov, p_match_f, p_match_v, param)
+function gen_shares(vacancy_pov, family_pov, p_match_f, p_match_v, param, N_g, N_p)
     α, β_v, β_f, R, A, γ = unpack(param)
-    share_f = Array{Float64,2}(undef, 10, 500) #will contain 10 arrays of 500x1
-    share_v = Array{Float64,2}(undef, 500, 10) #will contain 500 arrays of 10x1
-    for i = 1:10
+    share_f = Array{Float64,2}(undef, N_g, N_p) #will contain 10 arrays of 500x1
+    share_v = Array{Float64,2}(undef, N_p, N_g) #will contain 500 arrays of 10x1
+    for i = 1:N_g
         temp = family_pov[family_pov.zipcode .== i,:]
         share_f[i,:] = ϕ_f(temp.subsidy, temp.qual, temp.home, temp.dist, p_match_f[i], α, β_f)
     end
-    for i = 1:500
+    for i = 1:N_p
         temp = vacancy_pov[vacancy_pov.id .== i,:]
         share_v[i,:] = ϕ_v(temp.subsidy, temp.dist, p_match_v[i], β_v, R)
     end
     return share_f, share_v
 end
 
-function get_equilibrium(vacancy_pov, family_pov, param)
+function get_equilibrium(vacancy_pov, family_pov, param, N_f, N_v)
     #share_f = Array{Float64,2}(undef, 10, 500) #will contain 10 arrays of 500x1
     #share_v = Array{Float64,2}(undef, 500, 10) #will contain 500 arrays of 10x1
-    share_f = (1/500) * ones(10, 500)
-    share_v = (1/10) * ones(500, 10)
-    N_f = 1000 #Array{Float64,1}(undef, 10) #will contain 10 arrays of 500x1
-    N_v = 20 #Array{Float64,1}(undef, 500) #will contain 500 arrays of 10x1
+    N_p = convert(Int, maximum(vacancy_pov.id))
+    N_g = convert(Int, maximum(vacancy_pov.zipcode))
+    share_f = (1/N_p) * ones(N_g, N_p)
+    share_v = (1/N_g) * ones(N_p, N_g)
+    #N_f = 1000 #Array{Float64,1}(undef, 10) #will contain 10 arrays of 500x1
+    #N_v = 50 #Array{Float64,1}(undef, 500) #will contain 500 arrays of 10x1
     #for i = 1:10
     #    share_f[i, :] = (1/500)*ones(500)
     #    #N_f[i] = 1_000
@@ -98,8 +100,8 @@ function get_equilibrium(vacancy_pov, family_pov, param)
     #share_f_new = 1.0
     #share_v_new = 1.0
     while fx > 0.0001
-        p_match_f, p_match_v = fx_once(share_f, share_v, N_f, N_v, A, γ)
-        share_f_new, share_v_new = gen_shares(vacancy_pov, family_pov, p_match_f, p_match_v, param)
+        p_match_f, p_match_v = fx_once(share_f, share_v, N_f, N_v, N_g, N_p, A, γ)
+        share_f_new, share_v_new = gen_shares(vacancy_pov, family_pov, p_match_f, p_match_v, param, N_g, N_p)
         print("\t", "Iteration ", counter, "\n")
         fx_f = maximum(abs.(share_f .- share_f_new))
         fx_v = maximum(abs.(share_v .- share_v_new))
@@ -123,7 +125,7 @@ function get_equilibrium(vacancy_pov, family_pov, param)
     return share_f, share_v
 end
 
-function fx_once(share_f, share_v, N_f, N_v, A, γ)
+function fx_once(share_f, share_v, N_f, N_v, N_g, N_p, A, γ)
 
     NS_f = share_f .* N_f
     NS_v = share_v .* N_v
@@ -131,10 +133,10 @@ function fx_once(share_f, share_v, N_f, N_v, A, γ)
     #NS_v = deepcopy(share_v)
     #NS_f = deepcopy(share_f)
 
-    p_match_f = Array{Float64,2}(undef, 10, 500)
-    p_match_v = Array{Float64,2}(undef, 500, 10)
-    for f = 1:10
-        for v = 1:500
+    p_match_f = Array{Float64,2}(undef, N_g, N_p)
+    p_match_v = Array{Float64,2}(undef, N_p, N_g)
+    for f = 1:N_g
+        for v = 1:N_p
             #NS_f[f][v] = share_f[f][v] * N_f[f]
             #NS_v[v][f] = share_v[v][f] * N_v[v]
             if NS_f[f, v] == 0

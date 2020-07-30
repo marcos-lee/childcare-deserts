@@ -9,7 +9,7 @@ using .MatchingModel
 
 const m = MatchingModel
 
-using Distributions, DataFrames
+using Distributions, DataFrames, BenchmarkTools, Revise
 #using Revise
 
 N_g = 10
@@ -17,12 +17,6 @@ N_p = 500
 N_v = 10_000
 N_f = 10_000
 
-β_f = 2.5
-α = [-4.25, 1.5, 2.25, 1.75]
-
-A = .4
-β_v = 2.0
-R = 5
 
 #dist_vacancy = repeat(rand(Uniform(4,35), N_p), 20)
 #far = dist_vacancy .> 19.5
@@ -42,8 +36,8 @@ family_pov = DataFrame(reduce(vcat, family_pov_temp), [:zipcode, :subsidy, :qual
 # family_pov: there are 10 types of families, searching for 500 types of vacancies
 
 
-a = family_pov[family_pov.zipcode .== 1,:]
-aa = MatchingModel.ϕ_f(a.subsidy, a.qual, a.home, a.dist, a.p_match, α, β_f)
+#a = family_pov[family_pov.zipcode .== 1,:]
+#aa = MatchingModel.ϕ_f(a.subsidy, a.qual, a.home, a.dist, a.p_match, α, β_f)
 
 
 #types[:, :type] = 1:16
@@ -66,69 +60,20 @@ vacancy_pov = DataFrame(reduce(vcat, vacancy_pov_temp), [:id, :zipcode, :subsidy
 vacancy_pov
 #vacancy_pov: there are 500 types of vacancies searching for 10 types of families
 ##############################
-a = vacancy_pov[vacancy_pov.id .==1, :]
-MatchingModel.ϕ_v(a.subsidy, a.dists, a.p_match, β_v, R)
+#a = vacancy_pov[vacancy_pov.id .==1, :]
+#MatchingModel.ϕ_v(a.subsidy, a.dists, a.p_match, β_v, R)
 
-β_f = 2.5
+β_f = 2.9
 α = [-4.25, 1.5, 2.25, 1.75]
 A = .4
 β_v = 2.0
 R = 5
-γ = 0.6
-param = [α, β_v, β_f, R, A, γ]
-function unpack(param)
-    α = param[1]
-    β_v = param[2]
-    β_f = param[3]
-    R = param[4]
-    #A = param[5]
-    #γ = param[6]
-    return α, β_f, β_v, R #,A, γ
-end
-p_match_f = Array{Array{Float64}}(undef, 10) #will contain 10 arrays of 500x1
-p_match_v = Array{Array{Float64}}(undef, 500) #will contain 500 arrays of 10x1
-N_f = Array{Float64}(undef, 10) #will contain 10 arrays of 500x1
-N_v = Array{Float64}(undef, 500) #will contain 500 arrays of 10x1
-for i = 1:10
-    p_match_f[i] = (1/500)*ones(500)
-    N_f[i] = 1_000
-end
-for i = 1:500
-    p_match_v[i] = (1/10)*ones(10)
-    N_v[i] = 20
-end
+γ = 0.4
+param = vcat(α, β_v, β_f, R, A, γ)
 
-function gen_shares(vacancy_pov, family_pov, p_match_f, p_match_v, param)
-    α, β_v, β_f, R = unpack(param)
-    share_f = Array{Array{Float64}}(undef, 10) #will contain 10 arrays of 500x1
-    share_v = Array{Array{Float64}}(undef, 500) #will contain 500 arrays of 10x1
-    for i = 1:10
-        temp = family_pov[family_pov.zipcode .== i,:]
-        share_f[i] = MatchingModel.ϕ_f(temp.subsidy, temp.qual, temp.home, temp.dist, p_match_f[i], α, β_f)
-    end
-    for i = 1:500
-        temp = vacancy_pov[vacancy_pov.id .== i,:]
-        share_v[i] = MatchingModel.ϕ_v(temp.subsidy, temp.dist, p_match_v[i], β_v, R)
-    end
-    return share_f, share_v
-end
+include("MatchingModel.jl")
+using .MatchingModel
+share_f, share_v = MatchingModel.get_equilibrium(vacancy_pov, family_pov, param)
 
-share_f, share_v = gen_shares(vacancy_pov, family_pov, p_match_f, p_match_v, param)
-NS_v = share_v .* N_v
-NS_f = share_f .* N_f
-
-matches = Array{Float64}(undef, 10*500)
-p_match_f_new = deepcopy(p_match_f)
-p_match_v_new = deepcopy(p_match_v)
-p_match_f[1]
-for f = 1:10
-    for v = 1:500
-        p_match_f_new[f][v] = MatchingModel.matching_function(A, γ, NS_f[f][v], NS_v[v][f]) / NS_f[f][v]
-        p_match_v_new[v][f] = MatchingModel.matching_function(A, γ, NS_f[f][v], NS_v[v][f]) / NS_v[v][f]
-        #matches[i] = MatchingModel.matching_function(A, γ, NS_f[f][v], NS_v[v][f])
-    end
-end
+sort(share_f, dims = 2) .* 1000
 #MatchingModel.matching_function(A, γ, NS_f[1][1], NS_v[1][1]) / NS_f[1][1]
-share_f, share_v = gen_shares(vacancy_pov, family_pov, p_match_f_new, p_match_v_new, param)
-NS_v = share_v .* N_v
-NS_f = share_f .* N_f

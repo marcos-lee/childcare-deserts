@@ -9,6 +9,10 @@ function μ_f(subsidy, qual, home, dist, α, β_f)
     util = α[1] + α[2] * subsidy + α[3] * qual + α[4] * home - cost(dist, β_f) /100
 end
 
+function lnEU(subsidy, home, p_match, α)
+    util = α[1] + α[2] * subsidy + α[3] * home + log(p_match)
+end
+
 function lnEU_f(subsidy, qual, home, dist, p_match, α, β_f)
     if p_match == 0
         lnEU_f = -99999.0

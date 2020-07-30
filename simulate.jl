@@ -12,25 +12,30 @@ const m = MatchingModel
 using Distributions, DataFrames, BenchmarkTools, Revise
 #using Revise
 
-N_g = 10
-N_p = 500
+N = 5000
 
 
 
 #dist_vacancy = repeat(rand(Uniform(4,35), N_p), 20)
 #far = dist_vacancy .> 19.5
 
-dists = rand(truncated(LogNormal(2.75, 0.5), 4, 50), N_g, N_p)
+#dists = rand(truncated(LogNormal(2.75, 0.5), 4, 50), N_g, N_p)
 subsidy = rand(Uniform(0,1), N_p) .< .8
-qual = 1 .+ (rand(Uniform(0,1), N_p) .< 0.2)
+#qual = 1 .+ (rand(Uniform(0,1), N_p) .< 0.2)
 home = rand(Uniform(0,1), N_p) .< 0.4
+type = 1 .+ subsidy .+ 2 .* (home)
+ntypes = maximum(type)
+
+female = rand(N) .> .5
+
+df = unique([0 0; 1 0; 0 1; 1 1])
 
 
-family_pov_temp = Array{Array{Float64}}(undef, N_g)
-for i = 1:N_g
-    family_pov_temp[i] = [i*ones(N_p) subsidy qual home dists[i, :] (1/size(subsidy,1))*ones(size(subsidy,1))]
-end
-family_pov = DataFrame(reduce(vcat, family_pov_temp), [:zipcode, :subsidy, :qual, :home, :dist, :p_match])
+#family_pov_temp = Array{Array{Float64}}(undef, N_g)
+#for i = 1:N_g
+#    family_pov_temp[i] = [i*ones(N_p) subsidy qual home dists[i, :] (1/size(subsidy,1))*ones(size(subsidy,1))]
+#end
+#family_pov = DataFrame(reduce(vcat, family_pov_temp), [:zipcode, :subsidy, :qual, :home, :dist, :p_match])
 
 # family_pov: there are 10 types of families, searching for 500 types of vacancies
 
@@ -48,15 +53,14 @@ family_pov = DataFrame(reduce(vcat, family_pov_temp), [:zipcode, :subsidy, :qual
 # will be then 10 * 500 * 20
 
 
-vancacy_pov = vcat(dists, subsidy', qual', home')
-vacancy_pov_temp = Array{Array{Float64}}(undef, N_p)
-
-for i = 1:N_p
-    vacancy_pov_temp[i] = [i*ones(N_g) 1:N_g subsidy[i]*ones(N_g) qual[i]*ones(N_g) home[i]*ones(N_g) dists[:,i] (1/N_g)*ones(N_g)]
-end
-vacancy_pov = DataFrame(reduce(vcat, vacancy_pov_temp), [:id, :zipcode, :subsidy, :qual, :home, :dist, :p_match])
+#vancacy_pov = vcat(dists, subsidy', qual', home')
+#vacancy_pov_temp = Array{Array{Float64}}(undef, N_p)
+#
+#for i = 1:N_p
+#    vacancy_pov_temp[i] = [i*ones(N_g) 1:N_g subsidy[i]*ones(N_g) qual[i]*ones(N_g) home[i]*ones(N_g) dists[:,i] (1/N_g)*ones(N_g)]
+#end
+#vacancy_pov = DataFrame(reduce(vcat, vacancy_pov_temp), [:id, :zipcode, :subsidy, :qual, :home, :dist, :p_match])
 #vacancy_pov_extend = repeat(vacancy_pov, inner = 20)
-vacancy_pov
 #vacancy_pov: there are 500 types of vacancies searching for 10 types of families
 ##############################
 #a = vacancy_pov[vacancy_pov.id .==1, :]

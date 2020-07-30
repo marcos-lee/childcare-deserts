@@ -1,7 +1,22 @@
 module MatchingModel
 
-function matching_function(A, γ, NS_f, NS_v)
-    X = A * (NS_f^γ) * (NS_v^(1-γ))
+using Distributions
+
+function gen_data(N_g, N_p)
+    dists = rand(truncated(LogNormal(2.75, 0.5), 4, 50), N_g, N_p)
+    subsidy = rand(Uniform(0,1), N_p) .< .8
+    qual = (rand(Uniform(0,1), N_p) .< 0.2)
+    home = rand(Uniform(0,1), N_p) .< 0.4
+
+    family_pov = [dists repeat(subsidy', N_g) repeat(qual', N_g) repeat(home', N_g)]
+
+    vacancy_pov = [dists' repeat(subsidy, 1, N_g)]
+
+    return family_pov, vacancy_pov
+end
+
+function matching_function(A, NS_f, NS_v)
+    X = A * (NS_f^0.5) * (NS_v^0.5)
     return min(X, NS_f, NS_v)
 end
 
@@ -40,6 +55,14 @@ function ϕ_v(subsidy_subset, dist_subset, p_match, β_v, R)
     return ϕ_v
 end
 
+function ϕ(lnEU, σ)
+    if sum(exp.(lnEU)) == 0.0
+        print("divide by zero!")
+    end
+    ϕ = exp.(lnEU ./ σ) ./ sum(exp.(lnEU ./ σ))
+    return ϕ
+end
+
 function ϕ_f(subsidy_subset, qual_subset, home_subset, dist_subset, p_match, α, β_f)
     temp = lnEU_f.(subsidy_subset, qual_subset, home_subset, dist_subset, p_match, Ref(α), β_f)
     if sum(exp.(temp)) == 0.0
@@ -55,22 +78,30 @@ function unpack(param)
     β_f = param[6]
     R = param[7]
     A = param[8]
-    γ = param[9]
-    return α, β_f, β_v, R, A, γ
+    σ = param[9]
+    return α, β_f, β_v, R, A, σ
 end
 
 
 function gen_shares(vacancy_pov, family_pov, p_match_f, p_match_v, param, N_g, N_p)
-    α, β_v, β_f, R, A, γ = unpack(param)
+    α, β_v, β_f, R, A, σ = unpack(param)
     share_f = Array{Float64,2}(undef, N_g, N_p) #will contain 10 arrays of 500x1
     share_v = Array{Float64,2}(undef, N_p, N_g) #will contain 500 arrays of 10x1
+    subsidy_f = family_pov[:, (N_p+1):2*N_p]
+    qual = family_pov[:, (2*N_p+1):3*N_p]
+    home = family_pov[:, (3*N_p+1):4*N_p]
+    dist_f = family_pov[:, 1:N_p]
+    subsidy_v = vacancy_pov[:, (N_g+1):2*N_g]
+    dist_v = vacancy_pov[:, (1):N_g]
     for i = 1:N_g
-        temp = family_pov[family_pov.zipcode .== i,:]
-        share_f[i,:] = ϕ_f(temp.subsidy, temp.qual, temp.home, temp.dist, p_match_f[i], α, β_f)
+        #temp = family_pov[family_pov.zipcode .== i,:]
+        lnEU = lnEU_f.(subsidy_f[i,:], qual[i,:], home[i,:], dist_f[i,:], p_match_f[i,:], Ref(α), β_f)
+        share_f[i,:] = ϕ(lnEU, σ)
     end
     for i = 1:N_p
-        temp = vacancy_pov[vacancy_pov.id .== i,:]
-        share_v[i,:] = ϕ_v(temp.subsidy, temp.dist, p_match_v[i], β_v, R)
+        #temp = vacancy_pov[vacancy_pov.id .== i,:]
+        lnEU = lnEU_v.(subsidy_v[i,:], dist_v[i,:], p_match_v[i,:], β_v, R)
+        share_v[i,:] = ϕ(lnEU, σ)
     end
     return share_f, share_v
 end
@@ -78,8 +109,8 @@ end
 function get_equilibrium(vacancy_pov, family_pov, param, N_f, N_v)
     #share_f = Array{Float64,2}(undef, 10, 500) #will contain 10 arrays of 500x1
     #share_v = Array{Float64,2}(undef, 500, 10) #will contain 500 arrays of 10x1
-    N_p = convert(Int, maximum(vacancy_pov.id))
-    N_g = convert(Int, maximum(vacancy_pov.zipcode))
+    N_p = size(vacancy_pov, 1)
+    N_g = size(family_pov, 1)
     share_f = (1/N_p) * ones(N_g, N_p)
     share_v = (1/N_g) * ones(N_p, N_g)
     #N_f = 1000 #Array{Float64,1}(undef, 10) #will contain 10 arrays of 500x1
@@ -93,14 +124,17 @@ function get_equilibrium(vacancy_pov, family_pov, param, N_f, N_v)
     #    #N_v[i] = 20
     #end
     counter = 0
-    α, β_v, β_f, R, A, γ = unpack(param)
+    α, β_v, β_f, R, A, σ = unpack(param)
     #share_f, share_v = gen_shares(vacancy_pov, family_pov, p_match_f, p_match_v, param)
     #fx, p_match_f, p_match_v, share_f_new, share_v_new = fx_once(share_f, share_v, p_match_f, p_match_v, N_f, N_v, A, γ)
     fx = 1.0
     #share_f_new = 1.0
     #share_v_new = 1.0
     while fx > 0.0001
-        p_match_f, p_match_v = fx_once(share_f, share_v, N_f, N_v, N_g, N_p, A, γ)
+        if counter >= 200
+             break
+         end
+        p_match_f, p_match_v = fx_once(share_f, share_v, N_f, N_v, N_g, N_p, A)
         share_f_new, share_v_new = gen_shares(vacancy_pov, family_pov, p_match_f, p_match_v, param, N_g, N_p)
         print("\t", "Iteration ", counter, "\n")
         fx_f = maximum(abs.(share_f .- share_f_new))
@@ -125,7 +159,7 @@ function get_equilibrium(vacancy_pov, family_pov, param, N_f, N_v)
     return share_f, share_v
 end
 
-function fx_once(share_f, share_v, N_f, N_v, N_g, N_p, A, γ)
+function fx_once(share_f, share_v, N_f, N_v, N_g, N_p, A)
 
     NS_f = share_f .* N_f
     NS_v = share_v .* N_v
@@ -143,13 +177,13 @@ function fx_once(share_f, share_v, N_f, N_v, N_g, N_p, A, γ)
                 print("NSf = 0")
                 p_match_f[f, v] = 0
             else
-                p_match_f[f, v] = matching_function(A, γ, NS_f[f, v], NS_v[v, f]) / NS_f[f, v]
+                p_match_f[f, v] = matching_function(A, NS_f[f, v], NS_v[v, f]) / NS_f[f, v]
             end
             if NS_v[v, f] == 0
                 print("NSv = 0", "\t", v, "\t", f)
                 p_match_v[v, f] = 0
             else
-                p_match_v[v, f] = matching_function(A, γ, NS_f[f, v], NS_v[v, f]) / NS_v[v, f]
+                p_match_v[v, f] = matching_function(A, NS_f[f, v], NS_v[v, f]) / NS_v[v, f]
             end
             #matches[i] = MatchingModel.matching_function(A, γ, NS_f[f][v], NS_v[v][f])
         end

@@ -15,36 +15,29 @@ using .MatchingModel
 
 N_g = 200
 N_p = 2000
-
-family_pov, vacancy_pov = MatchingModel.gen_data(N_g, N_p)
-
-β_f = 2.5
+break_point = 10
+family_pov, vacancy_pov, choice_set = MatchingModel.gen_data(N_g, N_p, break_point)
+N_f = rand(1000:2000, N_g)
+N_v = rand(50:100, N_p)
+β_f = 3.5
 α = [-4.25, 1.5, 2.25, 1.75]
 A = 0.4
-β_v = 1.5
+β_v = 5.
 R = 5
 σ = 2.0
-N_v = 50
-N_f = 1000
 param = vcat(α, β_v, β_f, R, A, σ)
 
-share_f, share_v = MatchingModel.get_equilibrium(vacancy_pov, family_pov, param, N_f, N_v)
-p_match_f, p_match_v = MatchingModel.fx_once(share_f, share_v, N_f, N_v, N_g, N_p, A)
+
+share_f, share_v = MatchingModel.get_equilibrium(vacancy_pov, family_pov, param, N_f, N_v, choice_set)
+p_match_f, p_match_v = MatchingModel.fx_once(share_f, share_v, N_f, N_v, N_g, N_p, A, choice_set)
 
 
 
-
-sort(share_f, dims = 2) .* 1000
-#MatchingModel.matching_function(A, γ, NS_f[1][1], NS_v[1][1]) / NS_f[1][1]
-
-[p_match_v[1,:] share_v[1,:] p_match_f[:,1] share_f[:,1]]
-share_v[5,:].*50
-share_f[:,5].*1000
-sum(share_f[:,5].*1000)
+sum(choice_set, dims = 2)
 
 # FAMILIAS DO ZIPCODE 1 VAO PROCURAR AS SEGUINTES VAGAS:
-sort(share_f * 1000, dims = 2)
-sort(share_v * 50, dims = 2)
+sort(share_f .* N_f, dims = 2)
+sort(share_v .* N_v, dims = 1)
 
 sort(p_match_f, dims = 2)
 sort(p_match_v, dims = 2)

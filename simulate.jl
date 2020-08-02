@@ -4,81 +4,125 @@ provider has 2 qualities high low, 2 modes home and center, 4 types q = 1,2,3,4
 
 500 unique (home, qual, subsidy, dist) vacancies, repeat 20 times to get 10_000 vacancies
 
-using Distributions, BenchmarkTools, Revise
-
+using Distributions, BenchmarkTools, Revise, Random
+import NLopt
 include("MatchingModel.jl")
 using .MatchingModel
+include("GenSample.jl")
+using .GenSample
+include("Estimation.jl")
+using .Estimation
 
 #const m = MatchingModel
 
 #using Revise
+function gendata()
+    N_g = 20
+    N_p = 200
+    break_point = 10
+    family_pov, vacancy_pov, choice_set = MatchingModel.gen_data(N_g, N_p, break_point)
+    N_f = rand(1000:2000, N_g)
+    N_v = rand(50:100, N_p)
+    β_ft = 2.75
+    αt = [0.5, 0.25, 0.9]
+    At = 0.4
+    β_vt = 3.0
+    #R = 5
+    σt = 2.0
+    ct = 1.0/σt
+    #α, β_f, β_v, A, c
+    param = vcat(αt, log(β_vt-1), log(β_ft-1), log(At / (1-At)), log(ct / (1 - ct)))
 
-N_g = 200
-N_p = 2000
-break_point = 10
-family_pov, vacancy_pov, choice_set = MatchingModel.gen_data(N_g, N_p, break_point)
-N_f = rand(1000:2000, N_g)
-N_v = rand(50:100, N_p)
-β_f = 3.5
-α = [-4.25, 1.5, 2.25, 1.75]
-A = 0.4
-β_v = 5.
-R = 5
-σ = 2.0
-param = vcat(α, β_v, β_f, R, A, σ)
-
-
-share_f, share_v = MatchingModel.get_equilibrium(vacancy_pov, family_pov, param, N_f, N_v, choice_set)
-p_match_f, p_match_v = MatchingModel.fx_once(share_f, share_v, N_f, N_v, N_g, N_p, A, choice_set)
-
-
-
-sum(choice_set, dims = 2)
-
-# FAMILIAS DO ZIPCODE 1 VAO PROCURAR AS SEGUINTES VAGAS:
-sort(share_f .* N_f, dims = 2)
-sort(share_v .* N_v, dims = 1)
-
-sort(p_match_f, dims = 2)
-sort(p_match_v, dims = 2)
+    share_f, share_v = MatchingModel.get_equilibrium(vacancy_pov, family_pov, param, N_f, N_v, choice_set)
 
 
+    p_match_f, p_match_v = MatchingModel.fx_once(share_f, share_v, N_f, N_v, N_g, N_p, param, choice_set)
 
-#dist_vacancy = repeat(rand(Uniform(4,35), N_p), 20)
-#far = dist_vacancy .> 19.5
+    # Check equilibrium
+    #Nm_f = share_f .* N_f
+    #Nm_v = share_v .* N_v
+    #p_match_f[4,1] * Nm_f[4,1]
+    #p_match_v[1,4] * Nm_v[1,4]
 
+    index_search_f = Vector{Vector{Float64}}(undef, N_g)
+    index_match_f = Vector{Vector{Float64}}(undef, N_g)
+    index_search_v = Vector{Vector{Float64}}(undef, N_p)
+    index_match_v = Vector{Vector{Float64}}(undef, N_p)
+    for i = 1:N_g
+        index_search_f[i] = rand(Uniform(0,1), N_f[i])
+        index_match_f[i] = rand(Uniform(0,1), N_f[i])
+    end
+    for i = 1:N_p
+        index_search_v[i] = rand(Uniform(0,1), N_v[i])
+        index_match_v[i] = rand(Uniform(0,1), N_v[i])
+    end
 
-#family_pov_temp = Array{Array{Float64}}(undef, N_g)
-#for i = 1:N_g
-#    family_pov_temp[i] = [i*ones(N_p) subsidy qual home dists[i, :] (1/size(subsidy,1))*ones(size(subsidy,1))]
+    y_search_f = GenSample.y_search(share_f, index_search_f, N_f)
+    y_match_f = GenSample.y_match(p_match_f, index_match_f, N_f, y_search_f)
+    return y_match_f, vacancy_pov, family_pov, param, N_f, N_v, choice_set
+end
+
+#@btime likelihood(y_match_f, vacancy_pov, family_pov, param, N_f, N_v, choice_set)
+#function wraplike(param)
+#    return Estimation.likelihood(y_match_f, vacancy_pov, family_pov, param, N_f, N_v, choice_set)
 #end
-#family_pov = DataFrame(reduce(vcat, family_pov_temp), [:zipcode, :subsidy, :qual, :home, :dist, :p_match])
 
-# family_pov: there are 10 types of families, searching for 500 types of vacancies
+function wraplike1(param::Vector, grad::Vector)
+    if length(grad) > 0
+        nothing
+    end
+    test = 0.0
+    test = Estimation.likelihood(y_match_f, vacancy_pov, family_pov, param, N_f, N_v, choice_set)
+    #global count
+    #count::Int += 1
+    #println("Iteration: $count; value $test \n; param $param")
+    return test
+end
 
+#@profiler Estimation.likelihood(y_match_f, vacancy_pov, family_pov, param, N_f, N_v, choice_set)
+#@code_warntype wraplike1(param, [])
+using Optim
 
-#a = family_pov[family_pov.zipcode .== 1,:]
-#aa = MatchingModel.ϕ_f(a.subsidy, a.qual, a.home, a.dist, a.p_match, α, β_f)
+function iters(i)
+    function wraplike1(param::Vector, grad::Vector)
+        if length(grad) > 0
+            nothing
+        end
+        test = 0.0
+        test = Estimation.likelihood(y_match_f, vacancy_pov, family_pov, param, N_f, N_v, choice_set)
+        count::Int += 1
+        #println("Iteration: $count; value $test \n; param $param")
+        return test
+    end
+    Random.seed!(54321486+i)
+    y_match_f, vacancy_pov, family_pov, param, N_f, N_v, choice_set = gendata()
+    β_ft = 2.75
+    αt = [0.5, 0.25, 0.9]
+    At = 0.4
+    β_vt = 3.0
+    σt = 2.0
+    ct = 1.0/σt
+    init = vcat(αt, log(β_vt-1), log(β_ft-1), log(At / (1-At)), log(ct / (1 - ct)))
+    count = 0
+    opt = NLopt.Opt(:LN_NEWUOA, size(init)[1])
+    opt.min_objective = wraplike1
+    opt.xtol_rel = 1e-12
+    opt.ftol_rel = 1e-15
+    opt.maxeval = 125_000
+    (optf, optx, ret) = NLopt.optimize(opt, init)
+    return optx, ret, count
+end
 
-
-#types[:, :type] = 1:16
-#family_pov = leftjoin(family_pov, types, on = [:subsidy, :qual, :home, :far])
-#family_pov = repeat(family_pov, inner = 20)
-
-
-# create data set form pov of vacancy, each vacancy has 10 rows which has dist to zipcodes and subsidy
-# will be then 10 * 500 * 20
-
-#vancacy_pov = vcat(dists, subsidy', qual', home')
-#vacancy_pov_temp = Array{Array{Float64}}(undef, N_p)
-#
-#for i = 1:N_p
-#    vacancy_pov_temp[i] = [i*ones(N_g) 1:N_g subsidy[i]*ones(N_g) qual[i]*ones(N_g) home[i]*ones(N_g) dists[:,i] (1/N_g)*ones(N_g)]
-#end
-#vacancy_pov = DataFrame(reduce(vcat, vacancy_pov_temp), [:id, :zipcode, :subsidy, :qual, :home, :dist, :p_match])
-##vacancy_pov_extend = repeat(vacancy_pov, inner = 20)
-#vacancy_pov
-#vacancy_pov: there are 500 types of vacancies searching for 10 types of families
-##############################
-#a = vacancy_pov[vacancy_pov.id .==1, :]
-#MatchingModel.ϕ_v(a.subsidy, a.dists, a.p_match, β_v, R)
+numiter = 50
+results = Array{Array{Float64,1},1}(undef, numiter)
+rets = Array{Any,1}(undef, numiter)
+evals = Array{Int64,1}(undef, numiter)
+for iter = 1:numiter
+    optx, ret, count = iters(iter)
+    #count = 0
+    #(optf, optx, ret) = NLopt.optimize(opt, init)
+    α_e, β_ve, β_fe, A_e, c_e = MatchingModel.unpack(optx)
+    results[iter] = vcat(α_e, β_ve, β_fe, A_e, c_e )
+    rets[iter] = ret
+    evals[iter] = count
+end

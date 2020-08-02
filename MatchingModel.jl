@@ -23,7 +23,7 @@ function matching_function(A, NS_f, NS_v)
 end
 
 function μ_f(subsidy, qual, home, dist, α, β_f)
-    util = α[1] + α[2] * subsidy + α[3] * qual + α[4] * home - cost(dist, β_f) /100
+    util = α[1] * subsidy + α[2] * qual + α[3] * home - cost(dist, β_f) /100
 end
 
 function lnEU_f(subsidy, qual, home, dist, p_match, α, β_f)
@@ -39,54 +39,38 @@ function cost(dist, β)
     return dist ^ β
 end
 
-function lnEU_v(subsidy, dist, p_match, β, R)
+function lnEU_v(subsidy, dist, p_match, β_v)
     if p_match == 0
         lnEU_v = -99999.0
     else
-        lnEU_v = log(p_match) + R * subsidy - cost(dist, β) / 100
+        lnEU_v = log(p_match) + 5.0 * subsidy - cost(dist, β_v) / 100
     end
     return lnEU_v
 end
 
-function ϕ_v(subsidy_subset, dist_subset, p_match, β_v, R)
-    temp = lnEU_v.(subsidy_subset, dist_subset, p_match, β_v, R)
-    if sum(exp.(temp)) == 0
-        print("divide by zero!")
-    end
-    ϕ_v = exp.(temp) ./ sum(exp.(temp))
-    return ϕ_v
-end
 
-function ϕ(lnEU, σ, choice_set)
+function ϕ(lnEU, c, choice_set)
     if sum(exp.(lnEU)) == 0.0
-        print("divide by zero!")
+        #print("divide by zero!")
     end
-    ϕ = exp.((lnEU./ σ)) ./ sum(exp.((lnEU./ σ) ).* choice_set )
+    ϕ = exp.((lnEU .* c)) ./ sum(exp.((lnEU .* c) ).* choice_set )
     return ϕ
 end
 
-function ϕ_f(subsidy_subset, qual_subset, home_subset, dist_subset, p_match, α, β_f)
-    temp = lnEU_f.(subsidy_subset, qual_subset, home_subset, dist_subset, p_match, Ref(α), β_f)
-    if sum(exp.(temp)) == 0.0
-        print("divide by zero!")
-    end
-    ϕ_f = exp.(temp) ./ sum(exp.(temp))
-    return ϕ_f
-end
+
 
 function unpack(param)
-    α = param[1:4]
-    β_v = param[5]
-    β_f = param[6]
-    R = param[7]
-    A = param[8]
-    σ = param[9]
-    return α, β_f, β_v, R, A, σ
+    α = param[1:3]
+    β_v = 1+exp(param[4])
+    β_f = 1+exp(param[5])
+    A = exp(param[6]) / (1 + exp(param[6]))
+    c = exp(param[7]) / (1 + exp(param[7]))
+    return α, β_v, β_f, A, c
 end
 
 
 function gen_shares(vacancy_pov, family_pov, p_match_f, p_match_v, param, N_g, N_p, choice_set)
-    α, β_v, β_f, R, A, σ = unpack(param)
+    α, β_v, β_f, A, c = unpack(param)
     share_f = Array{Float64,2}(undef, N_g, N_p) #will contain 10 arrays of 500x1
     share_v = Array{Float64,2}(undef, N_p, N_g) #will contain 500 arrays of 10x1
     subsidy_f = family_pov[:, (N_p+1):2*N_p]
@@ -98,12 +82,12 @@ function gen_shares(vacancy_pov, family_pov, p_match_f, p_match_v, param, N_g, N
     for i = 1:N_g
         #temp = family_pov[family_pov.zipcode .== i,:]
         lnEU = lnEU_f.(subsidy_f[i,:], qual[i,:], home[i,:], dist_f[i,:], p_match_f[i,:], Ref(α), β_f)
-        share_f[i,:] = ϕ(lnEU, σ, choice_set[i,:])
+        share_f[i,:] = ϕ(lnEU, c, choice_set[i,:])
     end
     for i = 1:N_p
         #temp = vacancy_pov[vacancy_pov.id .== i,:]
-        lnEU = lnEU_v.(subsidy_v[i,:], dist_v[i,:], p_match_v[i,:], β_v, R)
-        share_v[i,:] = ϕ(lnEU, σ, choice_set[:,i])
+        lnEU = lnEU_v.(subsidy_v[i,:], dist_v[i,:], p_match_v[i,:], β_v)
+        share_v[i,:] = ϕ(lnEU, c, choice_set[:,i])
     end
     return share_f, share_v
 end
@@ -126,19 +110,17 @@ function get_equilibrium(vacancy_pov, family_pov, param, N_f, N_v, choice_set)
         #N_v[i] = 20
     end
     counter = 0
-    α, β_v, β_f, R, A, σ = unpack(param)
+    α, β_v, β_f, A, c = unpack(param)
     #share_f, share_v = gen_shares(vacancy_pov, family_pov, p_match_f, p_match_v, param)
     #fx, p_match_f, p_match_v, share_f_new, share_v_new = fx_once(share_f, share_v, p_match_f, p_match_v, N_f, N_v, A, γ)
     fx = 1.0
     #share_f_new = 1.0
     #share_v_new = 1.0
     while fx > 0.0001
-        if counter >= 200
-             break
-         end
-        p_match_f, p_match_v = fx_once(share_f, share_v, N_f, N_v, N_g, N_p, A, choice_set)
+
+        p_match_f, p_match_v = fx_once(share_f, share_v, N_f, N_v, N_g, N_p, param, choice_set)
         share_f_new, share_v_new = gen_shares(vacancy_pov, family_pov, p_match_f, p_match_v, param, N_g, N_p, choice_set)
-        print("\t", "Iteration ", counter, "\n")
+        #print("\t", "Iteration ", counter, "\n")
         fx_f = maximum(abs.(share_f[choice_set] .- share_f_new[choice_set]))
         fx_v = maximum(abs.(share_v[choice_set'] .- share_v_new[choice_set']))
         #for i = 1:10
@@ -147,22 +129,33 @@ function get_equilibrium(vacancy_pov, family_pov, param, N_f, N_v, choice_set)
         #for i = 1:500
         #    fx_v[i] = maximum(abs.(share_v[i] .- share_v_new[i]))
         #end
-        print("\t")
-        print(maximum(fx_f), "\t")
-        print(maximum(fx_v), "\t")
+        #print("\t")
+        #print(maximum(fx_f), "\t")
+        #print(maximum(fx_v), "\t")
         #share_f_fx = maximum(abs.(reduce(vcat, share_f .- share_f_new)))
         #share_v_fx = maximum(abs.(reduce(vcat, share_v .- share_v_new)))
         fx = max(fx_f, fx_v)
         share_f = copy(share_f_new)
         share_v = copy(share_v_new)
-        print(fx, "\n")
+        #print(fx, "\n")
         counter += 1
+        if counter >= 600
+            for i = 1:N_g
+                share_f[i,:] .= (1/sum(choice_set[i,:])) .* choice_set[i,:]
+                #N_f[i] = 1_000
+            end
+            for i = 1:N_p
+                share_v[i,:] .= (1/sum(choice_set[:,i])) .* choice_set[:,i]
+                #N_v[i] = 20
+            end
+            fx = 0
+         end
     end
     return share_f, share_v
 end
 
-function fx_once(share_f, share_v, N_f, N_v, N_g, N_p, A, choice_set)
-
+function fx_once(share_f, share_v, N_f, N_v, N_g, N_p, param, choice_set)
+    α, β_v, β_f, A, c = unpack(param)
     NS_f = share_f .* N_f
     NS_v = share_v .* N_v
 
@@ -180,13 +173,13 @@ function fx_once(share_f, share_v, N_f, N_v, N_g, N_p, A, choice_set)
                 p_match_v[v,f] = 0
             else
                 if NS_f[f, v] == 0
-                    print("NSf = 0")
+                    #print("NSf = 0")
                     p_match_f[f, v] = 0
                 else
                     p_match_f[f, v] = matching_function(A, NS_f[f, v], NS_v[v, f]) / NS_f[f, v]
                 end
                 if NS_v[v, f] == 0
-                    print("NSv = 0", "\t", v, "\t", f)
+                    #print("NSv = 0", "\t", v, "\t", f)
                     p_match_v[v, f] = 0
                 else
                     p_match_v[v, f] = matching_function(A, NS_f[f, v], NS_v[v, f]) / NS_v[v, f]
@@ -202,5 +195,22 @@ function fx_once(share_f, share_v, N_f, N_v, N_g, N_p, A, choice_set)
     #fx = max(share_f_fx, share_v_fx)
     return p_match_f, p_match_v
 end
+
+#function ϕ_f(subsidy_subset, qual_subset, home_subset, dist_subset, p_match, α, β_f)
+#    temp = lnEU_f.(subsidy_subset, qual_subset, home_subset, dist_subset, p_match, Ref(α), β_f)
+#    if sum(exp.(temp)) == 0.0
+#        print("divide by zero!")
+#    end
+#    ϕ_f = exp.(temp) ./ sum(exp.(temp))
+#    return ϕ_f
+#end
+#function ϕ_v(subsidy_subset, dist_subset, p_match, β_v, R)
+#    temp = lnEU_v.(subsidy_subset, dist_subset, p_match, β_v, R)
+#    if sum(exp.(temp)) == 0
+#        #print("divide by zero!")
+#    end
+#    ϕ_v = exp.(temp) ./ sum(exp.(temp))
+#    return ϕ_v
+#end
 
 end

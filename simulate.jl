@@ -17,8 +17,8 @@ using .Estimation
 
 #using Revise
 function gendata()
-    N_g = 20
-    N_p = 200
+    N_g = 200
+    N_p = 2000
     break_point = 10
     family_pov, vacancy_pov, choice_set = MatchingModel.gen_data(N_g, N_p, break_point)
     N_f = rand(1000:2000, N_g)
@@ -91,7 +91,7 @@ function iters(i)
         test = 0.0
         test = Estimation.likelihood(y_match_f, vacancy_pov, family_pov, param, N_f, N_v, choice_set)
         count::Int += 1
-        #println("Iteration: $count; value $test \n; param $param")
+        println("Iteration: $count; value $test \n; param $param")
         return test
     end
     Random.seed!(54321486+i)
@@ -113,16 +113,49 @@ function iters(i)
     return optx, ret, count
 end
 
-numiter = 50
-results = Array{Array{Float64,1},1}(undef, numiter)
-rets = Array{Any,1}(undef, numiter)
+numiter = 1
+results = Array{Float64,2}(undef, numiter, 7)
+rets = Array{String,1}(undef, numiter)
 evals = Array{Int64,1}(undef, numiter)
 for iter = 1:numiter
+    print(iter)
     optx, ret, count = iters(iter)
     #count = 0
     #(optf, optx, ret) = NLopt.optimize(opt, init)
     α_e, β_ve, β_fe, A_e, c_e = MatchingModel.unpack(optx)
-    results[iter] = vcat(α_e, β_ve, β_fe, A_e, c_e )
-    rets[iter] = ret
+    results[iter,:] = vcat(α_e, β_ve, β_fe, A_e, c_e )
+    rets[iter] = String(ret)
     evals[iter] = count
 end
+
+
+#rets = Array{Char,1}(undef, numiter)
+#for i = 1:numiter
+#    rets[i,:] = results[i]
+#end
+writedlm("Full_Large_sample_results.csv", results, ",")
+writedlm("Full_Large_sample_results_evals.csv", evals, ",")
+writedlm("Full_Large_sample_results_rets.csv", rets, ",")
+
+#writedlm("MC_results_rets.txt", rets, ",")
+MatchingModel.unpack(results[1,:])
+
+
+Random.seed!(54321486+1)
+y_match_f, vacancy_pov, family_pov, param, N_f, N_v, choice_set = gendata()
+share_f, share_v = MatchingModel.get_equilibrium(vacancy_pov, family_pov, param, N_f, N_v, choice_set)
+p_match_f, p_match_v = MatchingModel.fx_once(share_f, share_v, N_f, N_v, 200, 2000, param, choice_set)
+
+Nm_f = share_f .* N_f
+Nm_v = share_v .* N_v
+
+a = p_match_f .* Nm_f
+b = p_match_v .* Nm_v
+mean(a[choice_set])
+sort(a[choice_set])
+
+
+mean(share_f[choice_set])
+sort(share_f[choice_set])
+mean(p_match_f[choice_set])
+sort(p_match_f[choice_set])
